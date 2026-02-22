@@ -25,9 +25,9 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
             _parser = parser;
         }
 
-        public async Task<List<DataModelRepositoryInfo>> CachingRequest(string url = "", CancellationToken cancellation = default)
+        public async Task<List<DataModelRepositoryInfo>> CachingRequest(CancellationToken cancellation = default)
         {
-            string cache_code = $"cachde_code_from{url}";
+            string cache_code = $"cachde_code_from_baseadress";
 
             if (_memorycache.TryGetValue(cache_code, out object? cacheobject))
             {
@@ -41,7 +41,7 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
             {
                 _logger.LogInformation("начинаю процесс получения данных");
 
-                var reuslt = await Request(url, cancellation);
+                var reuslt = await Request(cancellation);
 
                 var options = new MemoryCacheEntryOptions()
                     .SetAbsoluteExpiration(TimeSpan.FromMinutes(15))
@@ -57,16 +57,17 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
             }
         }
 
-        public async Task<List<DataModelRepositoryInfo>> Request(string url = "", CancellationToken cancellation = default)
+        public async Task<List<DataModelRepositoryInfo>> Request(CancellationToken cancellation = default)
         {
             try
             {
-                var client = _httpClientFactory.CreateClient("GithubApiClient");
+                var client = _httpClientFactory.CreateClient("GithubApiClient1");
+
 
                 client.DefaultRequestHeaders.Authorization =
                               new System.Net.Http.Headers.AuthenticationHeaderValue("token", "");
 
-                var options = new HttpRequestMessage(HttpMethod.Get, url)
+                var options = new HttpRequestMessage(HttpMethod.Get, "user/repos")
                 {
                     Version = HttpVersion.Version20,
                     VersionPolicy = HttpVersionPolicy.RequestVersionOrHigher
@@ -187,7 +188,7 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
         {
             try
             {
-                var client = _httpClientFactory.CreateClient("GithubApiClient");
+                var client = _httpClientFactory.CreateClient("GithubApiClient2");
                 string url = $"/repos/{owner}/{repo}/contents/{path}";
                 _logger.LogInformation("Запрашиваю содержимое: {url}", url);
 
@@ -310,7 +311,7 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
         {
             try
             {
-                var client = _httpClientFactory.CreateClient("GithubApiClient");
+                var client = _httpClientFactory.CreateClient("GithubApiClient2");
                 string url = $"/repos/{owner}/{repo}/contents/{path}";
                 _logger.LogInformation("Запрашиваю содержимое: {url}", url);
 
