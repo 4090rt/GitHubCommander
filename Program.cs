@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Polly;
 using System;
 using System.IO;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Security;
 class program
@@ -23,26 +24,51 @@ class program
         service.AddMemoryCache();
         service.AddSingleton<GitParser1>();
         service.AddSingleton<HttpRequest>();
+        service.AddSingleton<HttpRequest2>();
+        service.AddSingleton<HttpRequest3>();
         service.AddSingleton<DataModelRepositoryInfo>();
         service.AddSingleton<FileContent>();
         service.AddSingleton<RepositoryContent>();
+        service.AddSingleton<ViborRepo>();
+        service.AddSingleton<ShowReposInreposInfiles>();
 
-        service.AddHttpClient("GithubApiClient", client =>
+        service.AddHttpClient("GithubApiClient1", client1 =>
         {
-            client.Timeout = TimeSpan.FromMinutes(60);
-            client.DefaultRequestHeaders.Add("User-Agent", "GitHubCommander/1.0");
-            client.DefaultRequestHeaders.Add("Accept", "application/vnd.github.v3+json");
-            client.BaseAddress = new Uri("https://api.github.com/");
-            client.DefaultRequestHeaders.Authorization =
+            client1.DefaultRequestHeaders.Add("User-Agent", "GitHubCommander/1.0");
+            client1.DefaultRequestHeaders.Add("Accept", "application/vnd.github.v3+json");
+            client1.BaseAddress = new Uri("https://api.github.com/");
+            client1.DefaultRequestHeaders.Authorization =
                 new AuthenticationHeaderValue("token", "");
+
+
+            client1.DefaultRequestVersion = HttpVersion.Version20;
+            client1.DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrHigher;
 
         }).AddTransientHttpErrorPolicy(polly =>
         polly.CircuitBreakerAsync(
             handledEventsAllowedBeforeBreaking: 5,
-            durationOfBreak: TimeSpan.FromSeconds(30)))
+            durationOfBreak: TimeSpan.FromSeconds(60),
+            onBreak: (outcome, timespan) =>
+            {
+                Console.WriteLine($"🔌 Circuit opened for {timespan}");
+            },
+            onReset: () =>
+            {
+                Console.WriteLine("✅ Circuit reset");
+            },
+            onHalfOpen: () =>
+            {
+                Console.WriteLine("⚠️ Circuit half-open");
+            }
+            ))
         .AddTransientHttpErrorPolicy(policy =>
         policy.WaitAndRetryAsync(3, retrycount =>
-        TimeSpan.FromSeconds(Math.Pow(2, retrycount))))
+        TimeSpan.FromSeconds(Math.Pow(2, retrycount)) +
+        +TimeSpan.FromMilliseconds(Random.Shared.Next(0, 100)),
+        onRetry: (outcome, timespan, retryCount, context) =>
+        {
+            Console.WriteLine($"🔄 Retry {retryCount} after {timespan}");
+        }))
         .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
         {
             EnableMultipleHttp2Connections = true,
@@ -55,132 +81,143 @@ class program
             MaxConnectionsPerServer = 10,
             UseCookies = false,
             AllowAutoRedirect = false,
-        });
-        var serviceProvider = service.BuildServiceProvider();
-        var httpRequest = serviceProvider.GetRequiredService<HttpRequest>();
-    }
-    // показать список репозиториев
-    static async Task ShowRepositoryes(HttpRequest gitHubService)
-    {
-        Console.WriteLine("Начинаю Запрос репозиториев");
-
-        Console.WriteLine("Твои репозитории:");
-
-        var item = await gitHubService.Request();
-
-        for (int i = 0; i < item.Count; i++)
-        {
-            var items = item[i];
-            Console.WriteLine($"[{i + 1}] {items.FullName} ★ {items.StargazersCount}");
-            if (!string.IsNullOrEmpty(items.Description))
+        })
+        .AddPolicyHandler(Policy.TimeoutAsync<HttpResponseMessage>(
+            TimeSpan.FromSeconds(10),
+            Polly.Timeout.TimeoutStrategy.Pessimistic,
+            onTimeoutAsync: (context, timespan, task) =>
             {
-                Console.WriteLine($"    {items.Description}");
+                Console.WriteLine($"⏰ Request timed out after {timespan}");
+                return Task.CompletedTask;
+            }));
+
+
+        service.AddHttpClient("GithubApiClient2", client2 =>
+        {
+            client2.Timeout = TimeSpan.FromSeconds(30);
+            client2.DefaultRequestHeaders.Add("User-Agent", "GitHubCommander/1.0");
+            client2.DefaultRequestHeaders.Add("Accept", "application/vnd.github.v3+json");
+            client2.BaseAddress = new Uri("https://api.github.com/");
+            client2.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("token", "");
+        }).AddTransientHttpErrorPolicy(policy =>
+        policy.CircuitBreakerAsync(
+            handledEventsAllowedBeforeBreaking: 5,
+            durationOfBreak: TimeSpan.FromMinutes(1),
+            onBreak: (outcome, timespan) =>
+            {
+                Console.WriteLine($"🔌 Circuit opened for {timespan}");
+            },
+            onHalfOpen: () =>
+            {
+                Console.WriteLine("⚠️ Circuit half-open");
+            },
+            onReset: () =>
+            {
+                Console.WriteLine("✅ Circuit reset");
+            }))
+        .AddTransientHttpErrorPolicy(polly =>
+        polly.WaitAndRetryAsync(3, retrycount =>
+        TimeSpan.FromSeconds(Math.Pow(2, retrycount)) +
+        TimeSpan.FromMilliseconds(Random.Shared.Next(0, 100)),
+        onRetry: (outcome, timespan, retryCount, context) =>
+        {
+            Console.WriteLine($"🔄 Retry {retryCount} after {timespan}");
+        }))
+        .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+        {
+            EnableMultipleHttp2Connections = true,
+
+            PooledConnectionLifetime = TimeSpan.FromSeconds(15),
+            PooledConnectionIdleTimeout = TimeSpan.FromSeconds(10),
+
+            AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate | DecompressionMethods.Brotli,
+
+            MaxConnectionsPerServer = 10,
+            UseCookies = false,
+            AllowAutoRedirect = false,
+        }).AddPolicyHandler(Policy.TimeoutAsync<HttpResponseMessage>(
+            TimeSpan.FromSeconds(10),
+            Polly.Timeout.TimeoutStrategy.Pessimistic,
+            onTimeoutAsync: (context, timespan, task) =>
+            {
+                Console.WriteLine($"⏰ Request timed out after {timespan}");
+                return Task.CompletedTask;
+            }));
+
+        var ServicePrivoder = service.BuildServiceProvider();
+        var servicec1 = ServicePrivoder.GetRequiredService<HttpRequest>();
+        var servicec2 = ServicePrivoder.GetRequiredService<HttpRequest2>();
+        var servicec3 = ServicePrivoder.GetRequiredService<HttpRequest3>();
+
+        await RunNavigator(servicec1, servicec2, servicec3);
+
+        static async Task RunNavigator(HttpRequest request1, HttpRequest2 request2, HttpRequest3 request3)
+        {
+            Console.Clear();
+
+            string currentOwner = "";
+            string currentRepo = "";
+            string currentPath = "";
+
+            while (true)
+            {
+                if (string.IsNullOrEmpty(currentRepo))
+                {
+                    ShowReposInreposInfiles showReposInreposInfiles = new ShowReposInreposInfiles();
+                    await showReposInreposInfiles.ShowRepositoryes(request1).ConfigureAwait(false);
+                }
+                else
+                {
+                    ShowReposInreposInfiles showReposInreposInfiles = new ShowReposInreposInfiles();
+                    await showReposInreposInfiles.ShowContents(request2, currentOwner, currentRepo, currentPath);
+                }
+                Console.WriteLine("\n═══════════════════════════════════════════");
+                Console.WriteLine("0 - Назад | q - Выход");
+                Console.Write("Введите номер: ");
+
+                string numb = Console.ReadLine();
+
+                if (numb.ToLower() == "q")
+                    break;
+
+                if (numb == "0")
+                {
+                    if (!string.IsNullOrEmpty(currentPath))
+                    {
+                        // Поднимаемся на уровень вверх
+                        int slash = currentPath.LastIndexOf("/");
+                        currentPath = slash > 0 ? currentPath.Substring(0, slash) : "";
+                    }
+                    else if (!string.IsNullOrEmpty(currentRepo))
+                    {
+                        // Выходим из репозитория к списку репозиториев
+                        currentRepo = "";
+                        currentOwner = "";
+                        currentPath = "";
+                    }
+                    continue;
+                }
+
+                if (int.TryParse(numb, out int number))
+                {
+                    if (string.IsNullOrEmpty(currentRepo))
+                    {
+                        ViborRepo viborRepo = new ViborRepo();
+                        var (owner, repo) = await viborRepo.HandleRepositoryChoice(request1, number);
+                        if (!string.IsNullOrEmpty(owner) && !string.IsNullOrEmpty(repo))
+                        {
+                            currentOwner = owner;
+                            currentRepo = repo;
+                            currentPath = "";
+                        }
+                    }
+                    else
+                    {
+                        ViborRepo viborRepo = new ViborRepo();
+                        currentPath = await viborRepo.HandleContentChoice(request2, request3, currentOwner, currentRepo, currentPath, number);
+                    }
+                }
             }
         }
-    }
-    // показать содержимое репозитория
-    static async Task ShowContents(HttpRequest2 gitHubService, string owner, string repo, string path)
-    {
-        if (string.IsNullOrEmpty(path))
-            Console.WriteLine($"📁 {owner}/{repo} (корень)\n");
-        else
-            Console.WriteLine($"📁 {owner}/{repo}/{path}\n");
-        
-        var items = await gitHubService.CacheRequest(owner, repo, path);
-
-        if (items == null)
-        {
-            Console.WriteLine("Файлы не найдены");
-            return;
-        }
-
-        for (int i = 0; i < items.Count; i++)
-        { 
-            var item = items[i];
-            string icon = item.IsDirectory ? "📁" : "📄";
-            string size = item.IsFile ? $" ({FormatSize(item.Size)})" : "";
-            Console.WriteLine($"[{i + 1}] {icon} {item.Name}{size}");
-        }
-    }
-    // показать файл
-    static async Task ShowFile(HttpRequest3 gitHubService, string owner, string repo, string path)
-    {
-        Console.Clear();
-        Console.WriteLine($"📄 {path}\n");
-
-        var file = await gitHubService.CacheRequest(owner, repo, path);
-
-        if (file != null)
-        {
-            string content = file.GetDecodedContent();
-            Console.WriteLine(content);
-        }
-        else
-        {
-            Console.WriteLine("❌ Не удалось прочитать файл");
-        }
-
-        Console.WriteLine("\n═══════════════════════════════════════════");
-        Console.WriteLine("Нажмите Enter чтобы вернуться...");
-        Console.ReadLine();
-    }
-
-    // обработка выбора репозитория
-    static async Task<(string owner, string repo)> HandleRepositoryChoice(HttpRequest gitHubService, int number)
-    {
-        var repositories = await gitHubService.CachingRequest();
-
-        if (number < 1 || number > repositories.Count)
-        {
-            Console.WriteLine("❌ Неверный номер. Нажмите Enter...");
-            Console.ReadLine();
-            return (null, null);
-        }
-
-        var selected = repositories[number - 1];
-        var parts = selected.FullName.Split('/');
-
-        return (parts[0], parts[1]);
-    }
-
-    // выбор папки или файла
-    static async Task<string> HandleContentChoice(HttpRequest2 gitHubService,HttpRequest3 GI, string owner, string repo, string currentPath, int number)
-    {
-        var items = await gitHubService.CacheRequest(owner, repo, currentPath);
-
-        if (number < 1 || number > items.Count)
-        {
-            Console.WriteLine("❌ Неверный номер. Нажмите Enter...");
-            Console.ReadLine();
-            return currentPath;
-        }
-
-        var selected = items[number - 1];
-
-        if (selected.IsDirectory)
-        {
-            return string.IsNullOrEmpty(currentPath)
-                ? selected.Name
-                : $"{currentPath}/{selected.Name}";
-        }
-        else
-        {
-            // Показываем файл
-            await ShowFile(GI, owner, repo, selected.Path);
-            return currentPath;
-        }
-    }
-
-    static string FormatSize(long bytes)
-    {
-        string[] sizes = { "B", "KB", "MB", "GB" };
-        double len = bytes;
-        int order = 0;
-        while (len >= 1024 && order < sizes.Length - 1)
-        {
-            order++;
-            len /= 1024;
-        }
-        return $"{len:0.##} {sizes[order]}";
     }
 }
