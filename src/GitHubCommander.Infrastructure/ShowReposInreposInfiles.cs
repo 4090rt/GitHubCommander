@@ -67,10 +67,12 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
             Console.Clear();
             Console.WriteLine($"📄 {path}\n");
 
-            var file = await gitHubService.CacheRequest(owner, repo, path);
+            var files = await gitHubService.CacheRequest(owner, repo, path);
 
-            if (file != null)
+            if (files != null && files.Count > 0)
             {
+                // Берём первый файл из списка
+                var file = files[0];
                 string content = file.GetDecodedContent();
                 Console.WriteLine(content);
             }

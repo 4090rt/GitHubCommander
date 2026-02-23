@@ -1,6 +1,7 @@
 ﻿using GithubComander.src.GitHubCommander.Data;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using Polly;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -29,19 +30,44 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
         {
             string cache_code = $"cachde_code_from_baseadress";
 
-            if (_memorycache.TryGetValue(cache_code, out object? cacheobject))
+            // Проверяем кэш ПЕРЕД запросом (чтобы вернуть при fallback)
+            List<DataModelRepositoryInfo>? oldCached = null;
+            if (_memorycache.TryGetValue(cache_code, out object? cacheobject) && 
+                cacheobject is List<DataModelRepositoryInfo> cached)
             {
-                if (cacheobject is List<DataModelRepositoryInfo> cached)
-                {
-                    _logger.LogInformation($"📦 Данные из кэша для {cache_code}");
-                    return cached;
-                }
+                oldCached = cached;
+                _logger.LogInformation($"📦 Данные из кэша для {cache_code}");
+                return cached;
             }
-            try
-            {
-                _logger.LogInformation("начинаю процесс получения данных");
 
-                var reuslt = await Request(cancellation);
+            // Fallback политика с возвратом старого кэша
+            var fallbackPolicy = Policy<List<DataModelRepositoryInfo>>
+                .Handle<Exception>()
+                .FallbackAsync(
+                    fallbackAction: async (outcome, ct) =>
+                    {
+                        _logger.LogWarning("⚠️ Fallback: запрос не удался");
+
+                        if (oldCached != null)
+                        {
+                            _logger.LogInformation("✅ Fallback: возвращаю старые данные из кэша");
+                            return oldCached;
+                        }
+
+                        _logger.LogWarning("⚠️ Fallback: кэш пуст, возвращаю пустой список");
+                        return new List<DataModelRepositoryInfo>();
+                    },
+                    onFallbackAsync: async (outcome, ctx) =>
+                    {
+                        _logger.LogError($"🆘 Fallback сработал: {outcome.Exception?.Message}");
+                        await Task.CompletedTask;
+                    });
+
+            _logger.LogInformation("начинаю процесс получения данных");
+
+            var result = await fallbackPolicy.ExecuteAsync(async () =>
+            {
+                var reuslt = await Request(cancellation).ConfigureAwait(false);
 
                 var options = new MemoryCacheEntryOptions()
                     .SetAbsoluteExpiration(TimeSpan.FromMinutes(15))
@@ -49,12 +75,9 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
 
                 _memorycache.Set(cache_code, reuslt, options);
                 return reuslt;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError("Возникло исключение" + ex.Message + ex.StackTrace);
-                return new List<DataModelRepositoryInfo>();
-            }
+            });
+
+            return result;
         }
 
         public async Task<List<DataModelRepositoryInfo>> Request(CancellationToken cancellation = default)
@@ -155,36 +178,60 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
             _parser = parser;
         }
 
-        public async Task<FileContent> CacheRequest(string owner, string repo, string path = "", CancellationToken cancellation = default)
+        public async Task<List<FileContent>> CacheRequest(string owner, string repo, string path = "", CancellationToken cancellation = default)
         {
             string key_cache = $"cached_key{owner}{repo}{path}";
 
-            if (_memorycache.TryGetValue(key_cache, out FileContent cached))
+            // Проверяем кэш ПЕРЕД запросом (чтобы вернуть при fallback)
+            List<FileContent>? oldCached = null;
+            if (_memorycache.TryGetValue(key_cache, out List<FileContent>? cached) && cached != null)
             {
+                oldCached = cached;
                 _logger.LogInformation($"📦 Данные из кэша для {key_cache}");
                 return cached;
             }
-            try
-            {
-                _logger.LogInformation("Начинаю запрос данных");
 
-                var result = await Request(owner, repo, path, cancellation);
+            // Fallback политика с возвратом старого кэша
+            var fallbackPolicy = Policy<List<FileContent>>
+                .Handle<Exception>()
+                .FallbackAsync(
+                    fallbackAction: async (outcome, ct) =>
+                    {
+                        _logger.LogWarning("⚠️ Fallback: запрос не удался");
+
+                        if (oldCached != null)
+                        {
+                            _logger.LogInformation("✅ Fallback: возвращаю старые данные из кэша");
+                            return oldCached;
+                        }
+
+                        _logger.LogWarning("⚠️ Fallback: кэш пуст, возвращаю пустой список");
+                        return new List<FileContent>();
+                    },
+                    onFallbackAsync: async (outcome, ctx) =>
+                    {
+                        _logger.LogError($"🆘 Fallback сработал: {outcome.Exception?.Message}");
+                        await Task.CompletedTask;
+                    });
+
+            _logger.LogInformation("Начинаю запрос данных");
+
+            var result = await fallbackPolicy.ExecuteAsync(async () =>
+            {
+                var reuslt = await Request(owner, repo, path, cancellation).ConfigureAwait(false);
 
                 var options = new MemoryCacheEntryOptions()
                     .SetAbsoluteExpiration(TimeSpan.FromMinutes(15))
                     .SetSlidingExpiration(TimeSpan.FromMinutes(10));
 
-                _memorycache.Set(key_cache, result, options);
-                return result;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError("Возникло исключение" + ex.Message + ex.StackTrace);
-                return new FileContent();
-            }
+                _memorycache.Set(key_cache, reuslt, options);
+                return reuslt;
+            });
+
+            return result;
         }
 
-        public async Task<FileContent> Request(string owner, string repo, string path = "", CancellationToken cancellation = default)
+        public async Task<List<FileContent>> Request(string owner, string repo, string path = "", CancellationToken cancellation = default)
         {
             try
             {
@@ -204,7 +251,8 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
                 _logger.LogInformation("Начинаю запрос");
                 var timer = System.Diagnostics.Stopwatch.StartNew();
                 using HttpResponseMessage recpon = await client.SendAsync(options).ConfigureAwait(false);
-                _logger.LogInformation($"Запрос завершен за {recpon}");
+                timer.Stop();
+                _logger.LogInformation($"Запрос завершен за {timer}");
                 if (recpon.IsSuccessStatusCode)
                 {
                     if (recpon != null)
@@ -221,45 +269,45 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
                             var result = await _parser.Parsed3(content);
                             _logger.LogInformation("Парсинг завершен");
 
-                            return result;
+                            return result != null ? new List<FileContent> { result } : new List<FileContent>();
                         }
                         catch (Exception ex)
                         {
                             _logger.LogError("Возникло исключение" + ex.Message + ex.StackTrace);
-                            return new FileContent();
+                            return new List<FileContent>();
                         }
                     }
                     else
                     {
                         _logger.LogError("Ответ от сервера не найден");
-                        return new FileContent();
+                        return new List<FileContent>();
                     }
                 }
                 else
                 {
                     _logger.LogError("запрос завершился ошибкой. посткод:" + recpon.StatusCode);
-                    return new FileContent();
+                    return new List<FileContent>();
                 }
             }
             catch (TaskCanceledException ex) when (!cancellation.IsCancellationRequested)
             {
                 _logger.LogError("Операция отменена" + ex.Message + ex.StackTrace);
-                return new FileContent();
+                return new List<FileContent>();
             }
             catch (TaskCanceledException ex) when (cancellation.IsCancellationRequested)
             {
                 _logger.LogError("Операция отменена пользователем" + ex.Message + ex.StackTrace);
-                return new FileContent();
+                return new List<FileContent>();
             }
             catch (HttpRequestException ex)
             {
                 _logger.LogError("Возниклои исключение при выполнении запроса" + ex.Message + ex.StackTrace);
-                return new FileContent();
+                return new List<FileContent>();
             }
             catch (Exception ex)
             {
                 _logger.LogError("Возникло исключение" + ex.Message + ex.StackTrace);
-                return new FileContent();
+                return new List<FileContent>();
             }
         }
     }
@@ -282,29 +330,48 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
         {
             string key_cache = $"cached_key{owner}{repo}{path}";
 
-            if (_memorycache.TryGetValue(key_cache, out List<RepositoryContent> cachded))
-            {
+            List<RepositoryContent> oldcache = null;
+            if (_memorycache.TryGetValue(key_cache, out List<RepositoryContent> cached) && cached != null)
+            { 
+                oldcache = cached;
                 _logger.LogInformation($"📦 Данные из кэша для {key_cache}");
-                return cachded;
+                return cached;
             }
-            try
-            {
-                _logger.LogInformation("Начинаю запрос данных");
 
-                var result = await Request(owner, repo, path, cancellation);
+            var fallback = Policy<List<RepositoryContent>>
+                .Handle<Exception>()
+                .FallbackAsync(
+                fallbackAction: async (outcome, ct) =>
+                {
+                    _logger.LogWarning("⚠️ Fallback: запрос не удался");
+                    if (oldcache != null)
+                    {
+                        _logger.LogInformation("✅ Fallback: возвращаю старые данные из кэша");
+                        return oldcache;
+                    }
+                    _logger.LogWarning("⚠️ Fallback: кэш пуст, возвращаю пустой список");
+                    return new List<RepositoryContent>();
+                },
+                onFallbackAsync: async (outcome, ct) =>
+                {
+                    _logger.LogError($"🆘 Fallback сработал: {outcome.Exception?.Message}");
+                    await Task.CompletedTask;
+                });
+
+            _logger.LogInformation("Начинаю запрос данных");
+            var result = await fallback.ExecuteAsync(async () =>
+            {
+                var resultat = await Request(owner, repo, path, cancellation).ConfigureAwait(false);
 
                 var options = new MemoryCacheEntryOptions()
-                    .SetAbsoluteExpiration(TimeSpan.FromMinutes(15))
-                    .SetSlidingExpiration(TimeSpan.FromMinutes(10));
+                .SetAbsoluteExpiration(TimeSpan.FromMinutes(15))
+                .SetSlidingExpiration(TimeSpan.FromMinutes(10));
 
-                _memorycache.Set(key_cache, result, options);
-                return result;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError("Возникло исключение" + ex.Message + ex.StackTrace);
-                return new List<RepositoryContent>();
-            }
+                _memorycache.Set(key_cache, resultat, options);
+                return resultat;
+            });
+
+            return result;
         }
 
         public async Task<List<RepositoryContent>> Request(string owner, string repo, string path = "", CancellationToken cancellation = default)
