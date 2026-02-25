@@ -1,4 +1,4 @@
-﻿using GithubComander.src.GitHubCommander.Data;
+using GithubComander.src.GitHubCommander.Data;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
