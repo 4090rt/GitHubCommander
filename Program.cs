@@ -1,4 +1,4 @@
-﻿// See https://aka.ms/new-console-template for more information
+// See https://aka.ms/new-console-template for more information
 using GithubComander.src.GitHubCommander.Data;
 using GithubComander.src.GitHubCommander.Infrastructure;
 using Microsoft.Extensions.Caching.Distributed;
@@ -51,9 +51,9 @@ class program
             client1.DefaultRequestHeaders.Add("User-Agent", "GitHubCommander/1.0");
             client1.DefaultRequestHeaders.Add("Accept", "application/vnd.github.v3+json");
             client1.BaseAddress = new Uri("https://api.github.com/");
+            var token1 = Environment.GetEnvironmentVariable("GITHUB_TOKEN") ?? throw new InvalidOperationException("GITHUB_TOKEN not set");
             client1.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("token", "");
-
+                new AuthenticationHeaderValue("token", token1);
 
             client1.DefaultRequestVersion = HttpVersion.Version20;
             client1.DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrHigher;
@@ -110,9 +110,10 @@ class program
         {
             client2.Timeout = TimeSpan.FromSeconds(30);
             client2.DefaultRequestHeaders.Add("User-Agent", "GitHubCommander/1.0");
-            client2.DefaultRequestHeaders.Add("Accept", "");
+            client2.DefaultRequestHeaders.Add("Accept", "application/vnd.github.v3+json");
             client2.BaseAddress = new Uri("https://api.github.com/");
-            client2.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("token", "");
+            var token2 = Environment.GetEnvironmentVariable("GITHUB_TOKEN") ?? throw new InvalidOperationException("GITHUB_TOKEN not set");
+            client2.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("token", token2);
         }).AddTransientHttpErrorPolicy(policy =>
         policy.CircuitBreakerAsync(
             handledEventsAllowedBeforeBreaking: 5,
@@ -163,8 +164,9 @@ class program
             client.DefaultRequestHeaders.Add("User-Agent", "GitHubCommander/1.0");
             client.DefaultRequestHeaders.Add("Accept", "application/vnd.github.v3+json");
             client.BaseAddress = new Uri("https://api.github.com/");
+            var tokenPut = Environment.GetEnvironmentVariable("GITHUB_TOKEN") ?? throw new InvalidOperationException("GITHUB_TOKEN not set");
             client.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("token", "");
+                new AuthenticationHeaderValue("token", tokenPut);
 
 
             client.DefaultRequestVersion = HttpVersion.Version20;
@@ -311,11 +313,15 @@ class program
         {
             Console.Clear();
             Console.WriteLine($"📄 Обновление: {filePath}");
+            Console.WriteLine($"Владелец: {owner}, Репозиторий: {repo}");
 
             // Получаем SHA файла (может быть null, если файл не существует)
             var files = await gitHubService2.CacheRequest(owner, repo, filePath);
             var file = files?.FirstOrDefault();
             string? sha = file?.Sha;
+            
+            Console.WriteLine($"SHA: {(sha ?? "null (новый файл)")}");
+            Console.WriteLine($"Локальный файл: {localPath}");
 
             // Проверяем локальный файл
             if (localPath == null || !File.Exists(localPath))
@@ -327,18 +333,20 @@ class program
 
             // Читаем содержимое
             string newcontent = await File.ReadAllTextAsync(localPath).ConfigureAwait(false);
+            Console.WriteLine($"Размер файла: {newcontent.Length} байт");
 
             // Отправляем на GitHub (создание или обновление)
-            bool success = await gitHubService.UpdateFileAsync(
-                owner, 
-                repo, 
-                filePath, 
-                newcontent, 
+            var (success, errorMessage) = await gitHubService.UpdateFileAsync(
+                owner,
+                repo,
+                filePath,
+                newcontent,
                 sha != null ? $"Update {filePath}" : $"Create {filePath}",
                 sha
             );
 
-            Console.WriteLine(success ? "✅ Готово!" : "❌ Ошибка");
+            Console.WriteLine(success ? "✅ Готово!" : $"❌ Ошибка: {errorMessage}");
+            Console.WriteLine("Нажмите Enter для продолжения...");
             Console.ReadKey();
         }
     }
