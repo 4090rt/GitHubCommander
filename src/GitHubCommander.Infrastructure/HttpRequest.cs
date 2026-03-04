@@ -9,6 +9,7 @@ using System.Net;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
+using System.Xml.Linq;
 
 namespace GithubComander.src.GitHubCommander.Infrastructure
 {
@@ -18,19 +19,22 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
         private readonly Microsoft.Extensions.Logging.ILogger<HttpRequest> _logger;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly GitParser1 _parser;
-        public HttpRequest(Microsoft.Extensions.Caching.Memory.IMemoryCache memorycache, Microsoft.Extensions.Logging.ILogger<HttpRequest> logger, IHttpClientFactory httpClientFactory, GitParser1 parser)
+        private readonly SemaphoreSlim _semaphore = new SemaphoreSlim(1,1);
+        private readonly FallbackPolitic _fallbackPolitic;
+        public HttpRequest(Microsoft.Extensions.Caching.Memory.IMemoryCache memorycache, Microsoft.Extensions.Logging.ILogger<HttpRequest> logger, IHttpClientFactory httpClientFactory, GitParser1 parser,
+            FallbackPolitic fallbackPolitic)
         {
             _httpClientFactory = httpClientFactory;
             _memorycache = memorycache;
             _logger = logger;
             _parser = parser;
+            _fallbackPolitic = fallbackPolitic;
         }
 
         public async Task<List<DataModelRepositoryInfo>> CachingRequest(CancellationToken cancellation = default)
         {
             string cache_code = $"cachde_code_from_baseadress";
 
-            // Проверяем кэш ПЕРЕД запросом (чтобы вернуть при fallback)
             List<DataModelRepositoryInfo>? oldCached = null;
             if (_memorycache.TryGetValue(cache_code, out object? cacheobject) && 
                 cacheobject is List<DataModelRepositoryInfo> cached)
@@ -40,44 +44,53 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
                 return cached;
             }
 
-            // Fallback политика с возвратом старого кэша
-            var fallbackPolicy = Policy<List<DataModelRepositoryInfo>>
-                .Handle<Exception>()
-                .FallbackAsync(
-                    fallbackAction: async (outcome, ct) =>
-                    {
-                        _logger.LogWarning("⚠️ Fallback: запрос не удался");
-
-                        if (oldCached != null)
-                        {
-                            _logger.LogInformation("✅ Fallback: возвращаю старые данные из кэша");
-                            return oldCached;
-                        }
-
-                        _logger.LogWarning("⚠️ Fallback: кэш пуст, возвращаю пустой список");
-                        return new List<DataModelRepositoryInfo>();
-                    },
-                    onFallbackAsync: async (outcome, ctx) =>
-                    {
-                        _logger.LogError($"🆘 Fallback сработал: {outcome.Exception?.Message}");
-                        await Task.CompletedTask;
-                    });
-
-            _logger.LogInformation("начинаю процесс получения данных");
-
-            var result = await fallbackPolicy.ExecuteAsync(async () =>
+            await _semaphore.WaitAsync(cancellation);
+            try
             {
-                var reuslt = await Request(cancellation).ConfigureAwait(false);
+                if (_memorycache.TryGetValue(cache_code, out object? cacheobject2))
+                {
+                    if (cacheobject2 is List<DataModelRepositoryInfo> cached2)
+                    {
+                        return cached2;
+                    }
+                }
 
-                var options = new MemoryCacheEntryOptions()
-                    .SetAbsoluteExpiration(TimeSpan.FromMinutes(15))
-                    .SetSlidingExpiration(TimeSpan.FromMinutes(10));
+                var fallback = _fallbackPolitic.FallbackPolicy(_fallbackPolitic.FallbackProverka, oldCached, cache_code, cancellation);
 
-                _memorycache.Set(cache_code, reuslt, options);
-                return reuslt;
-            });
+                _logger.LogInformation("начинаю процесс получения данных");
 
-            return result;
+                var result = await fallback.ExecuteAsync(async () =>
+                {
+                    var reuslt = await Request(cancellation).ConfigureAwait(false);
+
+                    if (reuslt != null && reuslt.Count > 0)
+                    {
+                        var options = new MemoryCacheEntryOptions()
+                        .SetAbsoluteExpiration(TimeSpan.FromMinutes(15))
+                        .SetSlidingExpiration(TimeSpan.FromMinutes(10));
+
+                        _memorycache.Set(cache_code, reuslt, options);
+
+                        var StaleOptions = new MemoryCacheEntryOptions()
+                        .SetAbsoluteExpiration(TimeSpan.FromMinutes(25));
+
+                        _memorycache.Set($"stale: {cache_code}", reuslt, StaleOptions);
+                        _logger.LogInformation($"✅ Cached fresh data for {cache_code}");
+                    }
+                    return reuslt ?? new List<DataModelRepositoryInfo>();
+                });
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError("Возникло исключение" + ex.Message + ex.StackTrace);
+                return new List<DataModelRepositoryInfo>();
+            }
+            finally
+            { 
+                _semaphore.Release();
+            }
         }
 
         public async Task<List<DataModelRepositoryInfo>> Request(CancellationToken cancellation = default)
@@ -86,9 +99,9 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
             {
                 var client = _httpClientFactory.CreateClient("GithubApiClient1");
 
-
+                var token1 = Environment.GetEnvironmentVariable("GITHUB_TOKEN") ?? throw new InvalidOperationException("GITHUB_TOKEN not set");
                 client.DefaultRequestHeaders.Authorization =
-                              new System.Net.Http.Headers.AuthenticationHeaderValue("token", "");
+                              new System.Net.Http.Headers.AuthenticationHeaderValue("token", token1);
 
                 var options = new HttpRequestMessage(HttpMethod.Get, "user/repos")
                 {
@@ -170,6 +183,7 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
         private readonly Microsoft.Extensions.Logging.ILogger<HttpRequest3> _logger;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly GitParser1 _parser;
+        private readonly SemaphoreSlim _semaphore = new SemaphoreSlim(1, 1); 
         public HttpRequest3(Microsoft.Extensions.Caching.Memory.IMemoryCache memorycache, Microsoft.Extensions.Logging.ILogger<HttpRequest3> logger, IHttpClientFactory httpClientFactory, GitParser1 parser)
         {
             _httpClientFactory = httpClientFactory;
@@ -182,7 +196,6 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
         {
             string key_cache = $"cached_key{owner}{repo}{path}";
 
-            // Проверяем кэш ПЕРЕД запросом (чтобы вернуть при fallback)
             List<FileContent>? oldCached = null;
             if (_memorycache.TryGetValue(key_cache, out List<FileContent>? cached) && cached != null)
             {
@@ -191,44 +204,99 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
                 return cached;
             }
 
-            // Fallback политика с возвратом старого кэша
-            var fallbackPolicy = Policy<List<FileContent>>
-                .Handle<Exception>()
-                .FallbackAsync(
-                    fallbackAction: async (outcome, ct) =>
-                    {
-                        _logger.LogWarning("⚠️ Fallback: запрос не удался");
+            await _semaphore.WaitAsync(cancellation);
 
-                        if (oldCached != null)
-                        {
-                            _logger.LogInformation("✅ Fallback: возвращаю старые данные из кэша");
-                            return oldCached;
-                        }
-
-                        _logger.LogWarning("⚠️ Fallback: кэш пуст, возвращаю пустой список");
-                        return new List<FileContent>();
-                    },
-                    onFallbackAsync: async (outcome, ctx) =>
-                    {
-                        _logger.LogError($"🆘 Fallback сработал: {outcome.Exception?.Message}");
-                        await Task.CompletedTask;
-                    });
-
-            _logger.LogInformation("Начинаю запрос данных");
-
-            var result = await fallbackPolicy.ExecuteAsync(async () =>
+            try
             {
-                var reuslt = await Request(owner, repo, path, cancellation).ConfigureAwait(false);
+                if (_memorycache.TryGetValue(key_cache, out object? cachedobject))
+                {
+                    if (cachedobject is List<FileContent> cached2)
+                    {
+                        return cached2;
+                    }
+                }
 
-                var options = new MemoryCacheEntryOptions()
-                    .SetAbsoluteExpiration(TimeSpan.FromMinutes(15))
-                    .SetSlidingExpiration(TimeSpan.FromMinutes(10));
+                var fallbackPolicy = Policy<List<FileContent>>
+                    .Handle<Exception>()
+                    .OrResult(r => r == null || r.Count == 0)
+                    .FallbackAsync(
+                        fallbackAction: async (outcome, context, ct) =>
+                        {
+                            _logger.LogWarning("⚠️ Fallback: запрос не удался");
 
-                _memorycache.Set(key_cache, reuslt, options);
-                return reuslt;
-            });
+                            var exception = outcome.Exception;
+                            var isEmpty = outcome.Result?.Count == 0;
 
-            return result;
+                            if (exception != null)
+                            {
+                                _logger.LogError($"Ошибка: {exception.Message}");
+                            }
+                            else if (isEmpty)
+                            {
+                                _logger.LogWarning("Получен пустой результат");
+                            }
+
+                            if (oldCached != null)
+                            {
+                                _logger.LogInformation("✅ Fallback: возвращаю старые данные из кэша");
+                                return oldCached;
+                            }
+
+                            string stalekey = $"stalekey:{key_cache}";
+
+                            if (_memorycache.TryGetValue(stalekey, out object? staleonject))
+                            {
+                                if (staleonject is List<FileContent> cachedstale)
+                                {
+                                    _logger.LogInformation("✅ Fallback: возвращаю stale-копию");
+                                    return cachedstale;
+                                }
+                            }
+
+                            _logger.LogWarning("⚠️ Fallback: кэш пуст, возвращаю пустой список");
+                            return new List<FileContent>();
+                        },
+                        onFallbackAsync: async (outcome, ctx) =>
+                        {
+                            _logger.LogError($"🆘 Fallback сработал: {outcome.Exception?.Message}");
+                            await Task.CompletedTask;
+                        });
+
+                _logger.LogInformation("Начинаю запрос данных");
+
+                var result = await fallbackPolicy.ExecuteAsync(async () =>
+                {
+                    var reuslt = await Request(owner, repo, path, cancellation).ConfigureAwait(false);
+
+                    if (reuslt != null && reuslt.Count > 0)
+                    {
+                        var options = new MemoryCacheEntryOptions()
+                            .SetAbsoluteExpiration(TimeSpan.FromMinutes(15))
+                            .SetSlidingExpiration(TimeSpan.FromMinutes(10));
+
+                        _memorycache.Set(key_cache, reuslt, options);
+
+                        var staleoptions = new MemoryCacheEntryOptions()
+                        .SetAbsoluteExpiration(TimeSpan.FromMinutes(25));
+
+                        _memorycache.Set($"stale:{key_cache}", reuslt, staleoptions);
+
+                        _logger.LogInformation($"✅ Данные сохранены в кэш для {key_cache}");
+                    }
+                    return reuslt ?? new List<FileContent>();
+                });
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError("Возникло исключение" + ex.Message + ex.StackTrace);
+                return new List<FileContent>();
+            }
+            finally
+            { 
+                _semaphore.Release();
+            }
         }
 
         public async Task<List<FileContent>> Request(string owner, string repo, string path = "", CancellationToken cancellation = default)
@@ -236,11 +304,14 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
             try
             {
                 var client = _httpClientFactory.CreateClient("GithubApiClient2");
-                string url = $"/repos/{owner}/{repo}/contents/{path}";
+                string url = string.IsNullOrEmpty(path)
+                    ? $"repos/{owner}/{repo}/contents"
+                    : $"repos/{owner}/{repo}/contents/{path}";
                 _logger.LogInformation("Запрашиваю содержимое: {url}", url);
 
+                var token2 = Environment.GetEnvironmentVariable("GITHUB_TOKEN") ?? throw new InvalidOperationException("GITHUB_TOKEN not set");
                 client.DefaultRequestHeaders.Authorization =
-                        new System.Net.Http.Headers.AuthenticationHeaderValue("token", "");
+                        new System.Net.Http.Headers.AuthenticationHeaderValue("token", token2);
 
                 var options = new HttpRequestMessage(HttpMethod.Get, url)
                 {
@@ -318,6 +389,7 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
         private readonly Microsoft.Extensions.Logging.ILogger<HttpRequest2> _logger;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly GitParser1 _parser;
+        private readonly SemaphoreSlim _semaphore = new SemaphoreSlim(1, 1);
         public HttpRequest2(Microsoft.Extensions.Caching.Memory.IMemoryCache memorycache, Microsoft.Extensions.Logging.ILogger<HttpRequest2> logger, IHttpClientFactory httpClientFactory, GitParser1 parser)
         {
             _httpClientFactory = httpClientFactory;
@@ -338,40 +410,98 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
                 return cached;
             }
 
-            var fallback = Policy<List<RepositoryContent>>
-                .Handle<Exception>()
-                .FallbackAsync(
-                fallbackAction: async (outcome, ct) =>
+            await _semaphore.WaitAsync(cancellation);
+
+            try
+            {
+                if (_memorycache.TryGetValue(key_cache, out object? cachedobject))
                 {
-                    _logger.LogWarning("⚠️ Fallback: запрос не удался");
-                    if (oldcache != null)
-                    {
-                        _logger.LogInformation("✅ Fallback: возвращаю старые данные из кэша");
-                        return oldcache;
+                    if (cachedobject is List<RepositoryContent> cached3)
+                    { 
+                        return cached3;
                     }
-                    _logger.LogWarning("⚠️ Fallback: кэш пуст, возвращаю пустой список");
-                    return new List<RepositoryContent>();
-                },
-                onFallbackAsync: async (outcome, ct) =>
+                }
+
+                var fallback = Policy<List<RepositoryContent>>
+                    .Handle<Exception>()
+                    .OrResult(r => r == null || r.Count == 0)
+                    .FallbackAsync(
+                    fallbackAction: async (outcome, context, ct) =>
+                    {
+                        _logger.LogWarning("⚠️ Fallback: запрос не удался");
+
+                        var exception = outcome.Exception;
+                        var isEmpty = outcome.Result?.Count == 0;
+
+                        if (exception != null)
+                        {
+                            _logger.LogError($"Ошибка: {exception.Message}");
+                        }
+                        else if (isEmpty)
+                        {
+                            _logger.LogWarning("Получен пустой результат");
+                        }
+
+                        if (oldcache != null)
+                        {
+                            _logger.LogInformation("✅ Fallback: возвращаю старые данные из кэша");
+                            return oldcache;
+                        }
+
+                        string stalekey = $"stalekey:{key_cache}";
+
+                        if (_memorycache.TryGetValue(stalekey, out object? staleobject))
+                        {
+                            if (staleobject is List<RepositoryContent> cachedstale)
+                            {
+                                _logger.LogInformation("✅ Fallback: возвращаю stale-копию");
+                                return cachedstale;
+                            }
+                        }
+
+                        _logger.LogWarning("⚠️ Fallback: кэш пуст, возвращаю пустой список");
+                        return new List<RepositoryContent>();
+                    },
+                    onFallbackAsync: async (outcome, ct) =>
+                    {
+                        _logger.LogError($"🆘 Fallback сработал: {outcome.Exception?.Message}");
+                        await Task.CompletedTask;
+                    });
+
+                _logger.LogInformation("Начинаю запрос данных");
+                var result = await fallback.ExecuteAsync(async () =>
                 {
-                    _logger.LogError($"🆘 Fallback сработал: {outcome.Exception?.Message}");
-                    await Task.CompletedTask;
+                    var resultat = await Request(owner, repo, path, cancellation).ConfigureAwait(false);
+
+                    if (resultat != null && resultat.Count > 0)
+                    {
+                        var options = new MemoryCacheEntryOptions()
+                        .SetAbsoluteExpiration(TimeSpan.FromMinutes(15))
+                        .SetSlidingExpiration(TimeSpan.FromMinutes(10));
+
+                        _memorycache.Set(key_cache, resultat, options);
+
+                        var optionsstale = new MemoryCacheEntryOptions()
+                        .SetAbsoluteExpiration(TimeSpan.FromMinutes(25));
+
+                        _memorycache.Set($"stale:{key_cache}", resultat, optionsstale);
+
+                        _logger.LogInformation($"✅ Данные сохранены в кэш для {key_cache}");
+                    }
+                    return resultat ?? new List<RepositoryContent>();
                 });
 
-            _logger.LogInformation("Начинаю запрос данных");
-            var result = await fallback.ExecuteAsync(async () =>
+                return result;
+            }
+            catch (Exception ex)
             {
-                var resultat = await Request(owner, repo, path, cancellation).ConfigureAwait(false);
-
-                var options = new MemoryCacheEntryOptions()
-                .SetAbsoluteExpiration(TimeSpan.FromMinutes(15))
-                .SetSlidingExpiration(TimeSpan.FromMinutes(10));
-
-                _memorycache.Set(key_cache, resultat, options);
-                return resultat;
-            });
-
-            return result;
+                _logger.LogError("Возникло исключение" + ex.Message + ex.StackTrace);
+                return new List<RepositoryContent>();
+            }
+            finally
+            {
+                _semaphore.Release();
+            }
         }
 
         public async Task<List<RepositoryContent>> Request(string owner, string repo, string path = "", CancellationToken cancellation = default)
@@ -379,11 +509,14 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
             try
             {
                 var client = _httpClientFactory.CreateClient("GithubApiClient2");
-                string url = $"/repos/{owner}/{repo}/contents/{path}";
+                string url = string.IsNullOrEmpty(path)
+                    ? $"repos/{owner}/{repo}/contents"
+                    : $"repos/{owner}/{repo}/contents/{path}";
                 _logger.LogInformation("Запрашиваю содержимое: {url}", url);
 
+                var token3 = Environment.GetEnvironmentVariable("GITHUB_TOKEN") ?? throw new InvalidOperationException("GITHUB_TOKEN not set");
                 client.DefaultRequestHeaders.Authorization =
-                        new System.Net.Http.Headers.AuthenticationHeaderValue("token", "");
+                        new System.Net.Http.Headers.AuthenticationHeaderValue("token", token3);
 
                 var options = new HttpRequestMessage(HttpMethod.Get, url)
                 {
