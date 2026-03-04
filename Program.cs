@@ -1,4 +1,4 @@
-// See https://aka.ms/new-console-template for more information
+﻿// See https://aka.ms/new-console-template for more information
 using GithubComander.src.GitHubCommander.Data;
 using GithubComander.src.GitHubCommander.Infrastructure;
 using Microsoft.Extensions.Caching.Distributed;
@@ -47,6 +47,7 @@ class program
         service.AddSingleton<ShowReposInreposInfiles>();
         service.AddSingleton<HttpPutRequest>();
         service.AddSingleton<HttpDeleteRequest>();
+        service.AddSingleton<FallbackPolitic>();
 
         service.AddHttpClient("GithubApiClient1", client1 =>
         {
