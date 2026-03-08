@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Logging;
+using Spectre.Console;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -9,76 +10,73 @@ using System.Threading.Tasks;
 
 namespace GithubComander.src.GitHubCommander.Infrastructure
 {
-    public class HttpPutRequest
+    public class HttpDeleteRequest
     {
         private readonly Microsoft.Extensions.Caching.Memory.IMemoryCache _memorycache;
-        private readonly Microsoft.Extensions.Logging.ILogger<HttpPutRequest> _logger;
+        private readonly Microsoft.Extensions.Logging.ILogger<HttpDeleteRequest> _logger;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly GitParser1 _parser;
-        public HttpPutRequest(Microsoft.Extensions.Caching.Memory.IMemoryCache memorycache, Microsoft.Extensions.Logging.ILogger<HttpPutRequest> logger, IHttpClientFactory httpClientFactory, GitParser1 parser)
+
+        public HttpDeleteRequest(Microsoft.Extensions.Caching.Memory.IMemoryCache memorycache, Microsoft.Extensions.Logging.ILogger<HttpDeleteRequest> logger, IHttpClientFactory httpClientFactory, GitParser1 parser)
         {
             _httpClientFactory = httpClientFactory;
             _memorycache = memorycache;
             _logger = logger;
             _parser = parser;
         }
-        public async Task<(bool Success, string ErrorMessage)> UpdateFileAsync(string owner, string repo, string path, string newContent, string commitMessage, string? sha = null)
+
+        public async Task<(bool Success, string ErrorMessage)> DeleteFileAsync(string owner, string repo, string path, string commitMessage, string sha)
         {
             try
             {
-                var client = _httpClientFactory.CreateClient("GithubApiClientPut");
+                var client = _httpClientFactory.CreateClient("GithubApiClientDelete");
 
-                var options = new HttpRequestMessage(HttpMethod.Put, $"/repos/{owner}/{repo}/contents/{path}")
+                var options = new HttpRequestMessage(HttpMethod.Delete, $"/repos/{owner}/{repo}/contents/{path}")
                 {
                     Version = HttpVersion.Version20,
                     VersionPolicy = HttpVersionPolicy.RequestVersionOrHigher
                 };
 
-                byte[] bytecontent = Encoding.UTF8.GetBytes(newContent);
-                string base64content = Convert.ToBase64String(bytecontent);
-
-                // Если sha есть — обновляем, если нет — создаём
-                object requestbody = sha != null
-                    ? new { message = commitMessage, content = base64content, sha }
-                    : new { message = commitMessage, content = base64content };
+                var requestbody = new
+                {
+                    message = commitMessage,
+                    sha = sha
+                };
 
                 var json = JsonSerializer.Serialize(requestbody, new JsonSerializerOptions
                 {
                     PropertyNamingPolicy = JsonNamingPolicy.CamelCase
                 });
 
-                var httpcontent = new StringContent(json, Encoding.UTF8, "application/json");
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
 
                 _logger.LogInformation($"📝 Сообщение: {commitMessage}, SHA: {(sha ?? "null (создание)")}");
 
-                options.Content = httpcontent;
-                using var recpon = await client.SendAsync(options);
+                options.Content = content;
+                using var request = await client.SendAsync(options).ConfigureAwait(false);
 
-                if (recpon.IsSuccessStatusCode)
+                if (request.IsSuccessStatusCode)
                 {
-                    string action = sha != null ? "обновлен" : "создан";
+                    string action = "Файл удален!";
                     _logger.LogInformation($"✅ Файл {path} {action}");
-
-                    // Инвалидируем кэш
                     string cacheKey = $"cached_key{owner}{repo}{path}";
                     _memorycache.Remove(cacheKey);
                     _memorycache.Remove($"stale:{cacheKey}");
-
                     return (true, "");
                 }
                 else
                 {
-                    string errorBody = await recpon.Content.ReadAsStringAsync();
-                    string errorMsg = $"❌ Ошибка {recpon.StatusCode}: {errorBody}";
+                    var error = await request.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    string errorMsg = $"❌ Ошибка {request.StatusCode}: {error}";
                     _logger.LogError(errorMsg);
 
                     // Специфичные ошибки
-                    if (recpon.StatusCode == System.Net.HttpStatusCode.Conflict)
+                    if (request.StatusCode == System.Net.HttpStatusCode.Conflict)
                     {
                         _logger.LogError("Conflict: файл был изменен на GitHub");
                         errorMsg += " | Conflict: файл был изменен на GitHub";
                     }
-                    else if (recpon.StatusCode == System.Net.HttpStatusCode.NotFound)
+                    else if (request.StatusCode == System.Net.HttpStatusCode.NotFound)
                     {
                         _logger.LogError("NotFound: путь не существует");
                         errorMsg += " | NotFound: путь не существует";

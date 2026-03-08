@@ -52,5 +52,6 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
                 return currentPath;
             }
         }
+
     }
 }
