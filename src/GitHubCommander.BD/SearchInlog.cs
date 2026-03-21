@@ -32,6 +32,7 @@ namespace GithubComander.src.GitHubCommander.BD
             _memoryCache = memoryCache;
             _pollSQLiteConnect = pollSQLiteConnect;
             _fallbackPolitic = fallbackPolitic;
+            Task.Run(async () => await Inithializate()).ConfigureAwait(false);
         }
 
         public async Task Inithializate()

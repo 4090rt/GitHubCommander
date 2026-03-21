@@ -48,7 +48,7 @@ namespace GithubComander.src.GitHubCommander.BD
                         Log TEXT NOT NULL,
                         Date TEXT NOT NULL
                     )";
-
+ 
                 using (var cmd = new SQLiteCommand(createTableCommand, connection))
                 {
                     await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);

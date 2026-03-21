@@ -57,6 +57,7 @@ namespace GithubComander.src.GitHubCommander.BD
             }
             finally
             {
+                sQLiteTransaction?.Dispose();
                 if (connection != null)
                 {
                     _pollSQLiteConnect.PullClose(connection);

@@ -23,53 +23,58 @@ namespace GithubComander.src.GitHubCommander.BD
 
         public async Task SaveLogg(IEnumerable<(string loginfo, DateTime dateTime)> logs)
         {
-            if (logs == null || !logs.Any()) return;
+            if (logs == null || !logs.Any())
+            {
+                _logger.LogWarning("Пустой список логов, сохранение отменено");
+                return;
+            }
 
-            SQLiteConnection connection = null;
-            SQLiteTransaction sQLiteTransaction = null;
+            SQLiteConnection? connection = null;
+            SQLiteTransaction? sQLiteTransaction = null;
             try
             {
                 _logger.LogInformation("Сохранение логов...");
-                _logger.LogInformation($"Пакетное сохранение {logs.Count()} логов...");
+                _logger.LogInformation("Пакетное сохранение {Count} логов...", logs.Count());
 
                 connection = _pollSQLiteConnect.PoolOpen();
-                sQLiteTransaction = connection.BeginTransaction();
-
-                string command = "INSERT INTO [LogBase] (Log, Date) VALUES(@L, @D)";
-
-                using (var commandsql = new SQLiteCommand(command, connection, sQLiteTransaction))
+                await using (sQLiteTransaction = connection.BeginTransaction())
                 {
-                    commandsql.Parameters.Add("@L", DbType.String);
-                    commandsql.Parameters.Add("@D", DbType.DateTime);
+                    string command = "INSERT INTO [LogBase] (Log, Date) VALUES(@L, @D)";
 
-                    foreach (var log in logs)
+                    await using (var commandsql = new SQLiteCommand(command, connection, sQLiteTransaction))
                     {
-                        commandsql.Parameters["@L"].Value = log.loginfo;
-                        commandsql.Parameters["@D"].Value = log.dateTime;
-                        await commandsql.ExecuteNonQueryAsync().ConfigureAwait(false);                  
+                        commandsql.Parameters.Add("@L", DbType.String);
+                        commandsql.Parameters.Add("@D", DbType.String);
+
+                        foreach (var log in logs)
+                        {
+                            commandsql.Parameters["@L"].Value = log.loginfo;
+                            commandsql.Parameters["@D"].Value = log.dateTime.ToString("yyyy-MM-dd HH:mm:ss");
+                            await commandsql.ExecuteNonQueryAsync().ConfigureAwait(false);
+                        }
                     }
+
+                    await sQLiteTransaction.CommitAsync().ConfigureAwait(false);
                 }
-                sQLiteTransaction.Commit();
-                _logger.LogInformation($"Успешно добавлено {logs.Count()} записей");
+
+                _logger.LogInformation("Успешно добавлено {Count} записей", logs.Count());
             }
             catch (SQLiteException ex)
             {
-                sQLiteTransaction?.Rollback();
-                _logger.LogError($"Возникло исключение при работе с БД" + ex.Message + ex.StackTrace);
-                return;
+                _logger.LogError(ex, "Возникло исключение при работе с БД");
+                await (sQLiteTransaction?.RollbackAsync() ?? Task.CompletedTask).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                sQLiteTransaction?.Rollback();
-                _logger.LogError("ВОзникло исключение" + ex.Message + ex.StackTrace);
-                return;
+                _logger.LogError(ex, "Возникло исключение");
+                await (sQLiteTransaction?.RollbackAsync() ?? Task.CompletedTask).ConfigureAwait(false);
             }
             finally
             {
                 sQLiteTransaction?.Dispose();
                 if (connection != null)
                 {
-                   _pollSQLiteConnect.PullClose(connection);
+                    _pollSQLiteConnect.PullClose(connection);
                 }
             }
         }
