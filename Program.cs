@@ -1,4 +1,5 @@
 ﻿// See https://aka.ms/new-console-template for more information
+using GithubComander.src.GitHubCommander.BD;
 using GithubComander.src.GitHubCommander.Data;
 using GithubComander.src.GitHubCommander.Infrastructure;
 using GithubComander.src.GitHubCommander.Infrastructure.Delegates;
@@ -23,6 +24,7 @@ class Program
 {
     private readonly HttpPutRequest _putRequest;
 
+
     public Program(HttpPutRequest putRequest)
     { 
         _putRequest = putRequest;
@@ -41,6 +43,10 @@ class Program
 
         lientOptions options = new lientOptions();
         options.RunDelegate(options.Servis, service);
+        options.RunDelegate(options.ServisEthernet, service);
+
+        service.AddSingleton<Microsoft.Extensions.Logging.ILogger>(sp =>
+            sp.GetRequiredService<ILoggerFactory>().CreateLogger("GithubComander"));
 
         service.AddSingleton<FallbackPolitic>();
         service.AddSingleton<GitParser1>();
@@ -57,7 +63,15 @@ class Program
         service.AddSingleton<ShowReposInreposInfiles>();
         service.AddSingleton<HttpPutRequest>();
         service.AddSingleton<HttpDeleteRequest>();
+        service.AddSingleton<HttpRequestEthernet>();
+        service.AddSingleton<PingRequest>();
 
+        // Регистрация сервисов БД
+        service.AddSingleton<PollSQLiteConnect>();
+        service.AddSingleton<CreateBd>();
+        service.AddSingleton<SaveCommandLog>();
+        service.AddSingleton<SaveLogInBd>();
+        service.AddSingleton<SelectAll>();
 
     var ServicePrivoder = service.BuildServiceProvider();
         var servicec1 = ServicePrivoder.GetRequiredService<HttpRequest>();
@@ -65,12 +79,20 @@ class Program
         var servicec3 = ServicePrivoder.GetRequiredService<HttpRequest3>();
         var services4 = ServicePrivoder.GetRequiredService<HttpPutRequest>();
         var services5 = ServicePrivoder.GetRequiredService<HttpDeleteRequest>();
+        var services6 = ServicePrivoder.GetRequiredService<SaveLogInBd>();
+        var services7 = ServicePrivoder.GetRequiredService<SelectAll>();
+        var services8 = ServicePrivoder.GetRequiredService<HttpRequestEthernet>();
+        var services9 = ServicePrivoder.GetRequiredService<PingRequest>();
+        // Инициализация БД
+        var createBd = ServicePrivoder.GetRequiredService<CreateBd>();
+        await createBd.Proverka();
 
-        await RunNavigator(servicec1, servicec2, servicec3, services4, services5);
+
+        await RunNavigator(servicec1, servicec2, servicec3, services4, services5, services7, services8, services9);
 
 
 
-        static async Task RunNavigator(HttpRequest request1, HttpRequest2 request2, HttpRequest3 request3, HttpPutRequest request4, HttpDeleteRequest request5)
+        static async Task RunNavigator(HttpRequest request1, HttpRequest2 request2, HttpRequest3 request3, HttpPutRequest request4, HttpDeleteRequest request5, SelectAll select, HttpRequestEthernet ethernet, PingRequest pingRequest)
         {
             Console.Clear();
 
@@ -117,6 +139,60 @@ class Program
                     continue;
                 }
 
+                if (numb == "ping")
+                {
+                    try
+                    {
+                       var result = await ethernet.RequestCache().ConfigureAwait(false);
+
+                        if (result != null)
+                        {
+                            foreach (var item in result)
+                            {
+                                Console.WriteLine($"IP: {item.IP}");
+                                Console.WriteLine($"Hostname: {item.Hostname}");
+                                Console.WriteLine($"City: {item.City}");
+                                Console.WriteLine($"Region: {item.Region}");
+                                Console.WriteLine($"Country: {item.Country}");
+                                Console.WriteLine($"Location: {item.Loc}");
+                                Console.WriteLine($"Org: {item.Org}");
+                                Console.WriteLine($"Postal: {item.Postal}");
+                                Console.WriteLine($"Timezone: {item.Timezone}");
+                                Console.WriteLine($"Readme: {item.Readme}");
+                                Console.WriteLine("═══════════════════════════════════════════");
+                            }
+                        }
+                        else
+                        {
+                            Console.WriteLine("Не удалос получить информацию о сети");
+                            await Task.Delay(10000);
+                        }
+
+                        var reusltping = await pingRequest.CacheRequest("speedtest.librespeed.org ").ConfigureAwait(false);
+
+                        if (result != null)
+                        {
+                            foreach (var items in reusltping)
+                            {
+                                Console.WriteLine($"Host: {items.Host}");
+                                Console.WriteLine($"PingMs: {items.PingMs}");
+                                Console.WriteLine($"Status: {items.Status}");
+                                Console.WriteLine($"Error: {items.Error}");
+                            }
+                            Console.WriteLine("Нажмите Enter для продолжения...");
+                            Console.ReadKey();
+                            Console.Clear();
+                        }
+                        continue;
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine("Возникло исключени при попытке получения информации о соединении");
+                        await Task.Delay(10000);
+                        continue;
+                    }
+                }
+
                 if (numb.StartsWith("commit "))
                 {
                     string param = numb.Substring(7).Trim();
@@ -143,6 +219,26 @@ class Program
                    : $"{currentPath}/{repoPath}";
 
                     await HandleCommit2(request5, request3, currentOwner, currentRepo, filePath, localPath);
+                }
+                if (numb.StartsWith("AllLogs"))
+                {
+                    try
+                    {
+                        Console.WriteLine("Вывожу количество логов в базе");
+                        var logs = await select.Select();
+
+                        if (logs == null)
+                        {
+                            Console.WriteLine("Логи отсутствуют");
+                        }
+                        Console.WriteLine($"Количество логов - {logs}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine("Возникло исключени про попытке вывода логов");
+                        await Task.Delay(10000);
+                        continue;
+                    }
                 }
 
                 if (int.TryParse(numb, out int number))
