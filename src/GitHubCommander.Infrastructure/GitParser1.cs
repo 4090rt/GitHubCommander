@@ -121,6 +121,41 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
                 return new FileContent();
             }
         }
+
+        public async Task<ParserEthernet> ParsedEthernet(Stream stream)
+        {
+            try
+            {
+                var options = new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true,
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                };
+
+                var result = await JsonSerializer.DeserializeAsync<ParserEthernet>(stream);
+
+                if (result != null)
+                {
+                    _logger.LogInformation("Успешно распаршено2");
+                    return result;
+                }
+                else
+                {
+                    _logger.LogInformation("объект парсинга не найден");
+                    return new ParserEthernet();
+                }
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogError(ex, "Ошибка формата JSON");
+                return new ParserEthernet();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError("Возникло исключение" + ex.Message + ex.StackTrace);
+                return new ParserEthernet();
+            }
+        }
             
     }
 }

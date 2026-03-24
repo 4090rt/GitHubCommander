@@ -1,4 +1,5 @@
-﻿using GithubComander.src.GitHubCommander.Data;
+﻿using GithubComander.src.GitHubCommander.BD;
+using GithubComander.src.GitHubCommander.Data;
 using GithubComander.src.GitHubCommander.Infrastructure.Delegates;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
@@ -24,9 +25,10 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
         private readonly Http2Options _optionsHttp;
         private readonly HttpRequestDelegate _httpRequestDelegate;
         private readonly Staleoptions _staleoptions;
+        private readonly SaveLogInBd _saveLogInBd;
 
         public HttpRequest(Microsoft.Extensions.Caching.Memory.IMemoryCache memorycache, Microsoft.Extensions.Logging.ILogger<HttpRequest> logger, IHttpClientFactory httpClientFactory, GitParser1 parser,
-            FallbackPolitic fallbackPolitic, Http2Options optionsHttp, HttpRequestDelegate httpRequestDelegate)
+            FallbackPolitic fallbackPolitic, Http2Options optionsHttp, HttpRequestDelegate httpRequestDelegate, SaveLogInBd saveLogInBd)
         {
             _httpClientFactory = httpClientFactory;
             _memorycache = memorycache;
@@ -35,6 +37,7 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
             _fallbackPolitic = fallbackPolitic;
             _optionsHttp = optionsHttp;
             _httpRequestDelegate = httpRequestDelegate;
+            _saveLogInBd = saveLogInBd;
         }
 
         public async Task<List<DataModelRepositoryInfo>> CachingRequest(CancellationToken cancellation = default)
@@ -46,10 +49,11 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
                 cacheobject is List<DataModelRepositoryInfo> cached)
             {
                 oldCached = cached;
-                _logger.LogInformation($"📦 Данные из кэша для {cache_code}");
+                string log = $"📦 Данные из кэша для {cache_code}";
+                _logger.LogInformation(log);
+                await _saveLogInBd.Saved(log, DateTime.Now);
                 return cached;
             }
-
             await _semaphore.WaitAsync(cancellation);
             try
             {

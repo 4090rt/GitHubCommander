@@ -77,5 +77,61 @@ namespace GithubComander.src.GitHubCommander.Infrastructure.Delegates
                         return Task.CompletedTask;
                     }));
         }
+
+        public void ServisEthernet(IServiceCollection services)
+        {
+            services.AddHttpClient("EthernetApiClient", client =>
+            {
+                client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+                client.DefaultRequestHeaders.AcceptEncoding.ParseAdd("gzip, deflate, br");
+                client.DefaultRequestHeaders.AcceptLanguage.ParseAdd("en-US");
+                client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+
+                client.DefaultRequestVersion = HttpVersion.Version20;
+                client.DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrHigher;
+            }).AddTransientHttpErrorPolicy(policy =>
+            policy.CircuitBreakerAsync(
+                handledEventsAllowedBeforeBreaking: 5,
+                durationOfBreak: TimeSpan.FromMinutes(1),
+                onBreak: (outcome, timespan) =>
+                {
+                    Console.WriteLine($"🔌 Circuit opened for {timespan}");
+                },
+                onHalfOpen: () =>
+                {
+                    Console.WriteLine("⚠️ Circuit half-open");
+                },
+                onReset: () =>
+                {
+                    Console.WriteLine("✅ Circuit reset");
+                })).AddTransientHttpErrorPolicy(polly =>
+                polly.WaitAndRetryAsync(3, retrycount =>
+                TimeSpan.FromSeconds(Math.Pow(2, retrycount)) +
+                TimeSpan.FromMicroseconds(Random.Shared.Next(0, 100)),
+                onRetry: (outcome, timespan, retrycount, context) =>
+                {
+                    Console.WriteLine($"🔄 Retry {retrycount} after {timespan}");
+                })).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler()
+                {
+                    EnableMultipleHttp2Connections = true,
+
+                    PooledConnectionLifetime = TimeSpan.FromMinutes(10),
+                    PooledConnectionIdleTimeout = TimeSpan.FromMinutes(15),
+
+                    AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate | DecompressionMethods.Brotli,
+
+                    MaxConnectionsPerServer = 10,
+                    UseCookies = false,
+                    AllowAutoRedirect = false,
+                }).AddPolicyHandler(Policy.TimeoutAsync<HttpResponseMessage>
+                (
+                    TimeSpan.FromSeconds(10),
+                    Polly.Timeout.TimeoutStrategy.Pessimistic,
+                     onTimeoutAsync: (context, timespan, task) =>
+                     {
+                         Console.WriteLine($"⏰ Request timed out after {timespan}");
+                         return Task.CompletedTask;
+                     }));
+        }
     }
 }

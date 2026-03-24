@@ -15,6 +15,9 @@ namespace GithubComander.src.GitHubCommander.Data
         [JsonPropertyName("path")]
         public string Path { get; set; }
 
+        [JsonPropertyName("sha")]
+        public string Sha { get; set; }
+
         [JsonPropertyName("content")]
         public string Content { get; set; }
 
