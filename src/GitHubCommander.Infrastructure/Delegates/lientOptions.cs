@@ -33,7 +33,16 @@ namespace GithubComander.src.GitHubCommander.Infrastructure.Delegates
 
                 client.DefaultRequestVersion = HttpVersion.Version20;
                 client.DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrHigher;
-            }).AddTransientHttpErrorPolicy(polly =>
+            })
+            .AddPolicyHandler(Policy.TimeoutAsync<HttpResponseMessage>(
+                TimeSpan.FromSeconds(30),
+                Polly.Timeout.TimeoutStrategy.Pessimistic,
+                onTimeoutAsync: (context, timespan, task) =>
+                {
+                    Console.WriteLine($"⏰ Request timed out after {timespan}");
+                    return Task.CompletedTask;
+                }))
+            .AddTransientHttpErrorPolicy(polly =>
             polly.CircuitBreakerAsync(
                 handledEventsAllowedBeforeBreaking: 5,
                 durationOfBreak: TimeSpan.FromMinutes(1),
@@ -48,14 +57,16 @@ namespace GithubComander.src.GitHubCommander.Infrastructure.Delegates
                 onReset: () =>
                 {
                     Console.WriteLine("⚠️ Circuit half-open");
-                })).AddTransientHttpErrorPolicy(policy =>
+                }))
+            .AddTransientHttpErrorPolicy(policy =>
                 policy.WaitAndRetryAsync(3, retryCount =>
                 TimeSpan.FromSeconds(Math.Pow(2, retryCount)) +
                 TimeSpan.FromMilliseconds(Random.Shared.Next(0, 100)),
                 onRetry: (outcome, timespan, retrycount, context) =>
                 {
                     Console.WriteLine($"🔄 Retry {retrycount} after {timespan}");
-                })).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler()
+                }))
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler()
                 {
                     EnableMultipleHttp2Connections = true,
 
@@ -67,15 +78,7 @@ namespace GithubComander.src.GitHubCommander.Infrastructure.Delegates
                     MaxConnectionsPerServer = 10,
                     UseCookies = false,
                     AllowAutoRedirect = false
-                }).AddPolicyHandler(Policy.TimeoutAsync<HttpResponseMessage>
-                (
-                    TimeSpan.FromSeconds(10),
-                    Polly.Timeout.TimeoutStrategy.Pessimistic,
-                    onTimeoutAsync: (context, timespan, task) =>
-                    {
-                        Console.WriteLine($"⏰ Request timed out after {timespan}");
-                        return Task.CompletedTask;
-                    }));
+                });
         }
 
         public void ServisEthernet(IServiceCollection services)
@@ -89,7 +92,16 @@ namespace GithubComander.src.GitHubCommander.Infrastructure.Delegates
 
                 client.DefaultRequestVersion = HttpVersion.Version20;
                 client.DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrHigher;
-            }).AddTransientHttpErrorPolicy(policy =>
+            })
+            .AddPolicyHandler(Policy.TimeoutAsync<HttpResponseMessage>(
+                TimeSpan.FromSeconds(30),
+                Polly.Timeout.TimeoutStrategy.Pessimistic,
+                onTimeoutAsync: (context, timespan, task) =>
+                {
+                    Console.WriteLine($"⏰ Request timed out after {timespan}");
+                    return Task.CompletedTask;
+                }))
+            .AddTransientHttpErrorPolicy(policy =>
             policy.CircuitBreakerAsync(
                 handledEventsAllowedBeforeBreaking: 5,
                 durationOfBreak: TimeSpan.FromMinutes(1),
@@ -104,14 +116,16 @@ namespace GithubComander.src.GitHubCommander.Infrastructure.Delegates
                 onReset: () =>
                 {
                     Console.WriteLine("✅ Circuit reset");
-                })).AddTransientHttpErrorPolicy(polly =>
+                }))
+            .AddTransientHttpErrorPolicy(polly =>
                 polly.WaitAndRetryAsync(3, retrycount =>
                 TimeSpan.FromSeconds(Math.Pow(2, retrycount)) +
-                TimeSpan.FromMicroseconds(Random.Shared.Next(0, 100)),
+                TimeSpan.FromMilliseconds(Random.Shared.Next(0, 100)),
                 onRetry: (outcome, timespan, retrycount, context) =>
                 {
                     Console.WriteLine($"🔄 Retry {retrycount} after {timespan}");
-                })).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler()
+                }))
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler()
                 {
                     EnableMultipleHttp2Connections = true,
 
@@ -123,15 +137,7 @@ namespace GithubComander.src.GitHubCommander.Infrastructure.Delegates
                     MaxConnectionsPerServer = 10,
                     UseCookies = false,
                     AllowAutoRedirect = false,
-                }).AddPolicyHandler(Policy.TimeoutAsync<HttpResponseMessage>
-                (
-                    TimeSpan.FromSeconds(10),
-                    Polly.Timeout.TimeoutStrategy.Pessimistic,
-                     onTimeoutAsync: (context, timespan, task) =>
-                     {
-                         Console.WriteLine($"⏰ Request timed out after {timespan}");
-                         return Task.CompletedTask;
-                     }));
+                });
         }
     }
 }
