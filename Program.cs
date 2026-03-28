@@ -3,6 +3,7 @@ using GithubComander.src.GitHubCommander.BD;
 using GithubComander.src.GitHubCommander.Data;
 using GithubComander.src.GitHubCommander.Infrastructure;
 using GithubComander.src.GitHubCommander.Infrastructure.Delegates;
+using GithubComander.src.GitHubCommander.Infrastructure.EthernetStat;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -65,7 +66,7 @@ class Program
         service.AddSingleton<HttpDeleteRequest>();
         service.AddSingleton<HttpRequestEthernet>();
         service.AddSingleton<PingRequest>();
-
+        service.AddSingleton<JitterClass>();
         // Регистрация сервисов БД
         service.AddSingleton<PollSQLiteConnect>();
         service.AddSingleton<CreateBd>();
@@ -83,16 +84,18 @@ class Program
         var services7 = ServicePrivoder.GetRequiredService<SelectAll>();
         var services8 = ServicePrivoder.GetRequiredService<HttpRequestEthernet>();
         var services9 = ServicePrivoder.GetRequiredService<PingRequest>();
+        var services10 = ServicePrivoder.GetRequiredService<JitterClass>();
         // Инициализация БД
         var createBd = ServicePrivoder.GetRequiredService<CreateBd>();
         await createBd.Proverka();
 
 
-        await RunNavigator(servicec1, servicec2, servicec3, services4, services5, services7, services8, services9);
+        await RunNavigator(servicec1, servicec2, servicec3, services4, services5, services7, services8, services9, services10);
 
 
 
-        static async Task RunNavigator(HttpRequest request1, HttpRequest2 request2, HttpRequest3 request3, HttpPutRequest request4, HttpDeleteRequest request5, SelectAll select, HttpRequestEthernet ethernet, PingRequest pingRequest)
+        static async Task RunNavigator(HttpRequest request1, HttpRequest2 request2, HttpRequest3 request3,
+            HttpPutRequest request4, HttpDeleteRequest request5, SelectAll select, HttpRequestEthernet ethernet, PingRequest pingRequest, JitterClass jitterClass)
         {
             Console.Clear();
 
@@ -144,44 +147,55 @@ class Program
                     try
                     {
                        var result = await ethernet.RequestCache().ConfigureAwait(false);
+                       await Task.Delay(100);
+                       var reusltping = await pingRequest.Request("speedtest.librespeed.org ").ConfigureAwait(false);
+                       await Task.Delay(100);
+                       var jitterresult = await jitterClass.JitterSc("google.com/generate_204", 5).ConfigureAwait(false);
 
-                        if (result != null)
+                        if (result != null && reusltping != null && jitterresult != null)
                         {
                             foreach (var item in result)
                             {
-                                Console.WriteLine($"IP: {item.IP}");
-                                Console.WriteLine($"Hostname: {item.Hostname}");
-                                Console.WriteLine($"City: {item.City}");
-                                Console.WriteLine($"Region: {item.Region}");
-                                Console.WriteLine($"Country: {item.Country}");
-                                Console.WriteLine($"Location: {item.Loc}");
-                                Console.WriteLine($"Org: {item.Org}");
-                                Console.WriteLine($"Postal: {item.Postal}");
-                                Console.WriteLine($"Timezone: {item.Timezone}");
-                                Console.WriteLine($"Readme: {item.Readme}");
-                                Console.WriteLine("═══════════════════════════════════════════");
+
+                                foreach (var item2 in reusltping)
+                                {
+                                    Console.WriteLine("-==Информация о Провайдере==-");
+
+                                    Console.WriteLine($"IP: {item.IP}");
+                                    Console.WriteLine($"Hostname: {item.Hostname}");
+                                    Console.WriteLine($"City: {item.City}");
+                                    Console.WriteLine($"Region: {item.Region}");
+                                    Console.WriteLine($"Country: {item.Country}");
+                                    Console.WriteLine($"Location: {item.Loc}");
+                                    Console.WriteLine($"Org: {item.Org}");
+                                    Console.WriteLine($"Postal: {item.Postal}");
+                                    Console.WriteLine($"Timezone: {item.Timezone}");
+                                    Console.WriteLine($"Readme: {item.Readme}");
+                                    Console.WriteLine("═══════════════════════════════════════════");
+
+                                    Console.WriteLine("-==Информация о пинге==-");
+
+                                    Console.WriteLine($"Host: {item2.Host}");
+                                    Console.WriteLine($"PingMs: {item2.PingMs}");
+                                    Console.WriteLine($"Status: {item2.Status}");
+                                    Console.WriteLine($"Error: {item2.Error}");
+                                    Console.WriteLine($"Maxping: {jitterresult.MaxMs}");
+                                    Console.WriteLine($"Minping: {jitterresult.MinMS}");
+                                    Console.WriteLine($"Averageping: {jitterresult.Average}");
+                                    Console.WriteLine($"Jitterping: {jitterresult.JitterMs}");
+                                    Console.WriteLine($"TimeJitterRequest: {jitterresult.Timer / 100}sec");
+
+                                }
                             }
+
+                            Console.WriteLine("Нажмите Enter для продолжения...");
+                            Console.ReadKey();
+                            Console.Clear();
                         }
                         else
                         {
                             Console.WriteLine("Не удалос получить информацию о сети");
                             await Task.Delay(10000);
-                        }
-
-                        var reusltping = await pingRequest.CacheRequest("speedtest.librespeed.org ").ConfigureAwait(false);
-
-                        if (result != null)
-                        {
-                            foreach (var items in reusltping)
-                            {
-                                Console.WriteLine($"Host: {items.Host}");
-                                Console.WriteLine($"PingMs: {items.PingMs}");
-                                Console.WriteLine($"Status: {items.Status}");
-                                Console.WriteLine($"Error: {items.Error}");
-                            }
-                            Console.WriteLine("Нажмите Enter для продолжения...");
-                            Console.ReadKey();
-                            Console.Clear();
                         }
                         continue;
                     }
