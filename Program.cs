@@ -67,6 +67,9 @@ class Program
         service.AddSingleton<HttpRequestEthernet>();
         service.AddSingleton<PingRequest>();
         service.AddSingleton<JitterClass>();
+        service.AddSingleton<PingRequestUS>();
+        service.AddSingleton<PingRequestEu>();
+        service.AddSingleton<PingRequestAsia>();
         // Регистрация сервисов БД
         service.AddSingleton<PollSQLiteConnect>();
         service.AddSingleton<CreateBd>();
@@ -85,17 +88,22 @@ class Program
         var services8 = ServicePrivoder.GetRequiredService<HttpRequestEthernet>();
         var services9 = ServicePrivoder.GetRequiredService<PingRequest>();
         var services10 = ServicePrivoder.GetRequiredService<JitterClass>();
+        var services11 = ServicePrivoder.GetRequiredService<PingRequestUS>();
+        var services12 = ServicePrivoder.GetRequiredService<PingRequestEu>();
+        var services13 = ServicePrivoder.GetRequiredService<PingRequestAsia>();
         // Инициализация БД
         var createBd = ServicePrivoder.GetRequiredService<CreateBd>();
         await createBd.Proverka();
 
 
-        await RunNavigator(servicec1, servicec2, servicec3, services4, services5, services7, services8, services9, services10);
+        await RunNavigator(servicec1, servicec2, servicec3, services4, services5, services7,
+            services8, services9, services10, services11, services12, services13);
 
 
 
         static async Task RunNavigator(HttpRequest request1, HttpRequest2 request2, HttpRequest3 request3,
-            HttpPutRequest request4, HttpDeleteRequest request5, SelectAll select, HttpRequestEthernet ethernet, PingRequest pingRequest, JitterClass jitterClass)
+            HttpPutRequest request4, HttpDeleteRequest request5, SelectAll select, HttpRequestEthernet ethernet, PingRequest pingRequest, JitterClass jitterClass,
+            PingRequestUS pingRequestUS, PingRequestEu pingRequestEu, PingRequestAsia pingRequestAsia)
         {
             Console.Clear();
 
@@ -141,7 +149,58 @@ class Program
                     }
                     continue;
                 }
+                if (numb == "pingserver")
+                {
+                    try
+                    {
+                        var result = await pingRequestUS.Request("https://api.github.com");
+                        await Task.Delay(100);
+                        var result2 = await pingRequestEu.Request("api.github.com");
+                        await Task.Delay(100);
+                        var result3 = await pingRequestAsia.Request("api.github.com");
 
+                        if (result != null && result2 != null && result3 != null)
+                        {
+                            Console.WriteLine("-==Пинг до Us сервера github==-");
+
+                            Console.WriteLine($"Host: {result.Host}");
+                            Console.WriteLine($"PingMs: {result.PingMs}");
+                            Console.WriteLine($"Status: {result.Status}");
+                            Console.WriteLine($"Error: {result.Error}");
+
+                            Console.WriteLine("-==Пинг до Eu сервера github==-");
+
+                            Console.WriteLine($"Host: {result2.Host}");
+                            Console.WriteLine($"PingMs: {result2.PingMs}");
+                            Console.WriteLine($"Status: {result2.Status}");
+                            Console.WriteLine($"Error: {result2.Error}");
+
+                            Console.WriteLine("-==Пинг до Asia сервера github==-");
+
+                            Console.WriteLine($"Host: {result3.Host}");
+                            Console.WriteLine($"PingMs: {result3.PingMs}");
+                            Console.WriteLine($"Status: {result3.Status}");
+                            Console.WriteLine($"Error: {result3.Error}");
+
+                            Console.WriteLine("Нажмите Enter для продолжения...");
+                            Console.ReadKey();
+                            Console.Clear();
+                        }
+                        else
+                        {
+                            Console.WriteLine("Не удалос получить информацию о сети");
+                            await Task.Delay(10000);
+                        }
+                        continue;
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine("Возникло исключени при попытке получения информации о соединении");
+                        await Task.Delay(10000);
+                        continue;
+                    }
+
+                }
                 if (numb == "ping")
                 {
                     try
