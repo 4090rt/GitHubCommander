@@ -136,7 +136,7 @@ namespace GithubComander.src.GitHubCommander.Infrastructure.Delegates
 
                     MaxConnectionsPerServer = 10,
                     UseCookies = false,
-                    AllowAutoRedirect = false,
+                    AllowAutoRedirect = true,
                 });
         }
     }

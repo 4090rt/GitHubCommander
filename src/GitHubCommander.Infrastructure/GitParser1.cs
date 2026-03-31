@@ -156,6 +156,41 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
                 return new ParserEthernet();
             }
         }
+
+        public async Task<GitHubCommit> ParsedCommit(Stream stream)
+        {
+            try
+            {
+                var options = new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true,
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                };
+
+                var result =await JsonSerializer.DeserializeAsync<GitHubCommit>(stream);
+
+                if (result != null)
+                {
+                    _logger.LogInformation("Успешно распаршено2");
+                    return result;
+                }
+                else
+                {
+                    _logger.LogInformation("объект парсинга не найден");
+                    return new GitHubCommit();
+                }
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogError(ex, "Ошибка формата JSON");
+                return new GitHubCommit();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError("Возникло исключение" + ex.Message + ex.StackTrace);
+                return new GitHubCommit();
+            }
+        }
             
     }
 }

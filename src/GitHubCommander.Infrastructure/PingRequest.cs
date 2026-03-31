@@ -145,23 +145,25 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
 
         public async Task<List<PingResult>> Request(string host, CancellationToken cancellation = default)
         {
+            HttpResponseMessage response = null;
             try
             {
                 var client = _httpClientFactory.CreateClient("EthernetApiClient");
 
-                // Запрос к Cloudflare для замера пинга
-                var options = new HttpRequestMessage(HttpMethod.Get, "https://www.cloudflare.com/")
+                // Запрос к speedtest.librespeed.org для замера пинга
+                // Используем пустой запрос для замера времени отклика
+                var options = new HttpRequestMessage(HttpMethod.Get, "https://www.google.com/generate_204")
                 {
                     Version = HttpVersion.Version20,
                     VersionPolicy = HttpVersionPolicy.RequestVersionOrHigher
                 };
 
-                _logger.LogInformation("Начинаю замер пинга до Cloudflare");
+                _logger.LogInformation("Начинаю замер пинга до Google (generate_204)");
                 var timer = System.Diagnostics.Stopwatch.StartNew();
-                using var request = await client.SendAsync(options, cancellation).ConfigureAwait(false);
+                response = await client.SendAsync(options, cancellation).ConfigureAwait(false);
                 timer.Stop();
 
-                if (request.IsSuccessStatusCode)
+                if (response.IsSuccessStatusCode)
                 {
                     var pingms = timer.ElapsedMilliseconds / 2;
 
@@ -185,14 +187,14 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
                             Host = host,
                             PingMs = 0,
                             Status = "error",
-                            Error = $"HTTP {request.StatusCode}"
+                            Error = $"HTTP {response.StatusCode}"
                         }
                     };
                 }
             }
             catch (TaskCanceledException ex) when (!cancellation.IsCancellationRequested)
             {
-                _logger.LogError(ex, "Операция отменена");
+                _logger.LogError(ex, "Операция отменена по таймауту");
                 return new List<PingResult>
                 {
                     new PingResult
@@ -200,7 +202,7 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
                         Host = host,
                         PingMs = 0,
                         Status = "timeout",
-                        Error = "Превышено время ожидания"
+                        Error = "Превышено время ожидания (10 сек)"
                     }
                 };
             }
@@ -245,6 +247,10 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
                         Error = ex.Message
                     }
                 };
+            }
+            finally
+            {
+                response?.Dispose();
             }
         }
 
