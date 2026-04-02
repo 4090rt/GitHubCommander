@@ -13,6 +13,7 @@ using Polly.Fallback;
 using Polly.Timeout;
 using System;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -70,6 +71,8 @@ class Program
         service.AddSingleton<PingRequestUS>();
         service.AddSingleton<PingRequestEu>();
         service.AddSingleton<PingRequestAsia>();
+        service.AddSingleton<CommitHistoryRequest>();
+        service.AddSingleton<DNScheck>();
         // Регистрация сервисов БД
         service.AddSingleton<PollSQLiteConnect>();
         service.AddSingleton<CreateBd>();
@@ -91,19 +94,21 @@ class Program
         var services11 = ServicePrivoder.GetRequiredService<PingRequestUS>();
         var services12 = ServicePrivoder.GetRequiredService<PingRequestEu>();
         var services13 = ServicePrivoder.GetRequiredService<PingRequestAsia>();
+        var services14 = ServicePrivoder.GetRequiredService<CommitHistoryRequest>();
+        var services15 = ServicePrivoder.GetRequiredService<DNScheck>();
         // Инициализация БД
         var createBd = ServicePrivoder.GetRequiredService<CreateBd>();
         await createBd.Proverka();
 
 
         await RunNavigator(servicec1, servicec2, servicec3, services4, services5, services7,
-            services8, services9, services10, services11, services12, services13);
+            services8, services9, services10, services11, services12, services13, services14, services15);
 
 
 
         static async Task RunNavigator(HttpRequest request1, HttpRequest2 request2, HttpRequest3 request3,
             HttpPutRequest request4, HttpDeleteRequest request5, SelectAll select, HttpRequestEthernet ethernet, PingRequest pingRequest, JitterClass jitterClass,
-            PingRequestUS pingRequestUS, PingRequestEu pingRequestEu, PingRequestAsia pingRequestAsia)
+            PingRequestUS pingRequestUS, PingRequestEu pingRequestEu, PingRequestAsia pingRequestAsia, CommitHistoryRequest commitHistoryRequest,DNScheck dnsRequest)
         {
             Console.Clear();
 
@@ -265,7 +270,87 @@ class Program
                         continue;
                     }
                 }
+                if (numb.StartsWith("commitshistory"))
+                {
+                    try
+                    {
+                        var result = await commitHistoryRequest.RequestCache(currentOwner, currentRepo);
 
+                        if (result != null)
+                        {
+                            foreach (var items in result)
+                            {
+                                Console.WriteLine("SHA:", items.Sha);
+                                Console.WriteLine("Message:", items.Message);
+                                Console.WriteLine("Author:", items.AuthorName);
+                                Console.WriteLine("Date:", items.AuthorDate);
+                                Console.WriteLine("UrlHTML:", items.HtmlUrl);
+                            }
+                            Console.WriteLine("Нажмите Enter для продолжения...");
+                            Console.ReadKey();
+                            Console.Clear();
+                        }
+                        else
+                        {
+                            Console.WriteLine("Не удалос получить информацию о коммитах");
+                            await Task.Delay(10000);
+                        }
+                        continue;
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine("Возникло исключени при попытке получения информации о коммитах");
+                        await Task.Delay(10000);
+                        continue;
+                    }
+
+                }
+                if (numb.StartsWith("dns "))
+                {
+                    try
+                    {
+                        string host = numb.Substring(4).Trim();
+
+                        if (string.IsNullOrEmpty(host))
+                        {
+                            Console.WriteLine("❌ Введите хост: dns <host>");
+                            await Task.Delay(2000);
+                            continue;
+                        }
+
+                        var results = await dnsRequest.CacheRequest(host);
+                        var result = results?.FirstOrDefault();
+
+                        if (result != null && result.Success)
+                        {
+                            Console.WriteLine("═══════════════════════════════════════════");
+                            Console.WriteLine($"✅ DNS: {result.Host}");
+                            Console.WriteLine($"⏱️ Время: {result.ResolveTime}мс");
+                            Console.WriteLine($"📍 Адресов: {result.Addresses.Length}");
+                            Console.WriteLine("───────────────────────────────────────────");
+                            foreach (var addr in result.Addresses)
+                            {
+                                Console.WriteLine($"   {addr}");
+                            }
+                            Console.WriteLine("═══════════════════════════════════════════");
+                            Console.WriteLine("Нажмите Enter для продолжения...");
+                            Console.ReadKey();
+                            Console.Clear();
+                        }
+                        else
+                        {
+                            Console.WriteLine($"❌ DNS ошибка: {result?.Error ?? "Неизвестная ошибка"}");
+                            await Task.Delay(5000);
+                        }
+                        continue;
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine("Возникло исключение при попытке получения DNS информации");
+                        await Task.Delay(5000);
+                        continue;
+                    }
+                }
                 if (numb.StartsWith("commit "))
                 {
                     string param = numb.Substring(7).Trim();
