@@ -157,7 +157,7 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
             }
         }
 
-        public async Task<GitHubCommit> ParsedCommit(Stream stream)
+        public async Task<List<GitHubCommit>> ParsedCommit(Stream stream)
         {
             try
             {
@@ -167,7 +167,7 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
                     PropertyNamingPolicy = JsonNamingPolicy.CamelCase
                 };
 
-                var result =await JsonSerializer.DeserializeAsync<GitHubCommit>(stream);
+                var result =await JsonSerializer.DeserializeAsync<List<GitHubCommit>>(stream);
 
                 if (result != null)
                 {
@@ -177,18 +177,18 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
                 else
                 {
                     _logger.LogInformation("объект парсинга не найден");
-                    return new GitHubCommit();
+                    return new List<GitHubCommit>();
                 }
             }
             catch (JsonException ex)
             {
                 _logger.LogError(ex, "Ошибка формата JSON");
-                return new GitHubCommit();
+                return new List<GitHubCommit>();
             }
             catch (Exception ex)
             {
                 _logger.LogError("Возникло исключение" + ex.Message + ex.StackTrace);
-                return new GitHubCommit();
+                return new List<GitHubCommit>();
             }
         }
             

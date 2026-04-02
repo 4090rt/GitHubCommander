@@ -49,7 +49,7 @@ namespace GithubComander.src.GitHubCommander.BD.Linq
         }
     }
 
-    public class SimpleFactoryParametrs
+    public class SimpleFactoryParametrs<T> where T : ModelData
     {
         private readonly ILogger _logger;
         private readonly DelegateForBd _delegateForBd;
@@ -65,7 +65,7 @@ namespace GithubComander.src.GitHubCommander.BD.Linq
         {
             if (type.Equals("LogDates"))
             {
-                return new LinqLogDates(_logger, _delegateForBd,3 _lINQ);
+                return (ISortParametrs<T>)(object)new LinqLogDates(_logger, _delegateForBd, _lINQ);
             }
             return null;
         }

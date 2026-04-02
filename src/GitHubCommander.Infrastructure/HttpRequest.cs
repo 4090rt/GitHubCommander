@@ -28,7 +28,7 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
         private readonly SaveLogInBd _saveLogInBd;
 
         public HttpRequest(Microsoft.Extensions.Caching.Memory.IMemoryCache memorycache, Microsoft.Extensions.Logging.ILogger<HttpRequest> logger, IHttpClientFactory httpClientFactory, GitParser1 parser,
-            FallbackPolitic fallbackPolitic, Http2Options optionsHttp, HttpRequestDelegate httpRequestDelegate, SaveLogInBd saveLogInBd)
+            FallbackPolitic fallbackPolitic, Http2Options optionsHttp, HttpRequestDelegate httpRequestDelegate, SaveLogInBd saveLogInBd, Staleoptions staleoptions)
         {
             _httpClientFactory = httpClientFactory;
             _memorycache = memorycache;
@@ -38,6 +38,7 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
             _optionsHttp = optionsHttp;
             _httpRequestDelegate = httpRequestDelegate;
             _saveLogInBd = saveLogInBd;
+            _staleoptions = staleoptions;
         }
 
         public async Task<List<DataModelRepositoryInfo>> CachingRequest(CancellationToken cancellation = default)
@@ -123,13 +124,16 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
         private readonly HttpRequestDelegate _httpRequestDelegate;
         private readonly Staleoptions _staleoptions;
         private readonly Http2Options _optionsHttp;
-        public HttpRequest3(Microsoft.Extensions.Caching.Memory.IMemoryCache memorycache, Microsoft.Extensions.Logging.ILogger<HttpRequest3> logger, IHttpClientFactory httpClientFactory, GitParser1 parser, FallbackPolitic fallbackPolitic)
+        public HttpRequest3(Microsoft.Extensions.Caching.Memory.IMemoryCache memorycache, Microsoft.Extensions.Logging.ILogger<HttpRequest3> logger, IHttpClientFactory httpClientFactory, GitParser1 parser, FallbackPolitic fallbackPolitic, Staleoptions staleoptions, Http2Options optionsHttp, HttpRequestDelegate httpRequestDelegate)
         {
             _httpClientFactory = httpClientFactory;
             _memorycache = memorycache;
             _logger = logger;
             _parser = parser;
             _fallbackPolitic = fallbackPolitic;
+            _staleoptions = staleoptions;
+            _optionsHttp = optionsHttp;
+            _httpRequestDelegate = httpRequestDelegate;
         }
 
         public async Task<List<FileContent>> CacheRequest(string owner, string repo, string path = "", CancellationToken cancellation = default)
@@ -214,13 +218,16 @@ namespace GithubComander.src.GitHubCommander.Infrastructure
         private readonly HttpRequestDelegate _httpRequestDelegate;
         private readonly Staleoptions _staleoptions;
         private readonly Http2Options _optionsHttp;
-        public HttpRequest2(Microsoft.Extensions.Caching.Memory.IMemoryCache memorycache, Microsoft.Extensions.Logging.ILogger<HttpRequest2> logger, IHttpClientFactory httpClientFactory, GitParser1 parser, FallbackPolitic fallbackPolitic)
+        public HttpRequest2(Microsoft.Extensions.Caching.Memory.IMemoryCache memorycache, Microsoft.Extensions.Logging.ILogger<HttpRequest2> logger, IHttpClientFactory httpClientFactory, GitParser1 parser, FallbackPolitic fallbackPolitic, Staleoptions staleoptions, Http2Options optionsHttp, HttpRequestDelegate httpRequestDelegate)
         {
             _httpClientFactory = httpClientFactory;
             _memorycache = memorycache;
             _logger = logger;
             _parser = parser;
             _fallbackPolitic = fallbackPolitic;
+            _staleoptions = staleoptions;
+            _optionsHttp = optionsHttp;
+            _httpRequestDelegate = httpRequestDelegate;
         }
 
         public async Task<List<RepositoryContent>> CacheRequest(string owner, string repo, string path = "", CancellationToken cancellation = default)
